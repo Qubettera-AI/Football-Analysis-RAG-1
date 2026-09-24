@@ -4,11 +4,11 @@
 
 **Goal:** Package the current repository as a reproducible P5 deployment baseline with a production Docker image, non-provisioning Compose configuration, centralized timestamped logging, a health endpoint, and a Render deployment descriptor.
 
-**Architecture:** Add only the operational application shell required by P5: a minimal FastAPI process exposes `/health` and `/docs`; it does not implement P1 discussion/analytics routes or P2/P3 views. One Docker image runs the API. Compose starts that API by default and keeps the existing PostgreSQL service behind a `legacy-db` profile so a normal P5 run never pulls or creates a database. Render builds the same Dockerfile and checks `/health`.
+**Architecture:** Integrate P5 with the existing P1–P4 FastAPI application and static frontend. Preserve the existing API routes and worker lifecycle; add centralized logging, a production Docker image, app-first Compose configuration, and a Render descriptor. The API serves the existing frontend at `/app`, Swagger at `/docs`, and health at `/health`. Compose starts the API by default and keeps the existing PostgreSQL service behind a `legacy-db` profile so a normal P5 run never pulls or creates a database.
 
 **Tech Stack:** Python 3.11, FastAPI, Uvicorn, pytest, Docker, Docker Compose, Render Docker service.
 
-**Scope:** P5 only. P1–P4 product features and P6 documentation/demo deliverables remain explicitly out of scope for this mission; their gaps are recorded in the final handoff.
+**Scope:** P5 packaging and deployment only. P1–P4 product features already exist on `origin/main` and are preserved rather than reimplemented; P6 documentation and demo deliverables remain out of scope and are recorded in the final handoff.
 
 ## Global Constraints
 
@@ -25,21 +25,21 @@
 
 **Files:**
 - Create: `tests/test_deployment.py`
-- Create: `pytest.ini`
+- Modify: `pytest.ini`
 
 **Interfaces:**
-- Consumes: `src.api.main:app`, `src.utils.logger.configure_logging`.
-- Produces: executable acceptance tests for the P5 health surface and test discovery.
+- Consumes: `src.api.main:app`, `src.api.routes.router`, `src.utils.logger.configure_logging`.
+- Produces: executable acceptance tests for the existing health route and test discovery.
 
 - [ ] **Step 1: Write the failing tests**
 
-Create tests that import the application, call `GET /health` and `GET /` through FastAPI's in-process `TestClient`, assert the exact health payload, assert the service metadata, and assert that health requests emit an INFO log containing `health_check`. Add `pytest.ini` with `testpaths = tests` and `python_files = test_*.py` so the interactive `scripts/test_agents.py` is not collected.
+Create tests that inspect the existing API router, call its synchronous `/health` handler, assert the exact Pydantic payload, and assert that health requests emit an INFO log containing `health_check`. Extend the existing `pytest.ini` with `python_files = test_*.py` and `addopts = -ra` so the interactive `scripts/test_agents.py` is not collected.
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
 Run: `python -m pytest tests/test_deployment.py -q`
 
-Expected: collection or import failure because `src.api` and `src.utils.logger` do not yet exist.
+Expected: collection or import failure because the centralized P5 logger and deployment test contract do not yet exist.
 
 - [ ] **Step 3: Do not implement yet**
 
@@ -48,29 +48,29 @@ Keep the test file as the executable contract for Task 2. Do not add production 
 ### Task 2: Implement the P5 runtime and logger
 
 **Files:**
-- Create: `src/api/__init__.py`
-- Create: `src/api/main.py`
+- Modify: `src/api/main.py`
+- Modify: `src/api/routes.py`
 - Create: `src/utils/__init__.py`
 - Create: `src/utils/logger.py`
-- Modify: `requirements.txt:1-13`
+- Modify: `requirements.txt`
+- Modify: `tests/conftest.py`
 
 **Interfaces:**
-- `src.api.main:app` — FastAPI application.
-- `GET /health` — returns HTTP 200 with exactly `{"status": "ok"}`.
-- `GET /` — returns service name, status, and docs path.
+- `src.api.main:app` — existing FastAPI application and frontend mount.
+- `src.api.routes:health_check()` — existing health handler, now synchronous and logged.
 - `src.utils.logger.configure_logging(level: str | None = None) -> None` — idempotently configures timestamp, level, and stream output.
 
-- [ ] **Step 1: Add the minimal application shell**
+- [ ] **Step 1: Wire the existing application to centralized logging**
 
-Create a FastAPI app with the two read-only endpoints above. Configure logging during startup, log health requests at INFO, and let FastAPI provide `/docs`. Do not add CORS, topic, discussion, or analytics routes.
+Keep the remote P1–P4 routes, CORS, worker lifecycle, exception handlers, and `/app` frontend mount. Replace only the root logging setup with `configure_logging()` and preserve request middleware logging.
 
-- [ ] **Step 2: Add centralized logging**
+- [ ] **Step 2: Log the existing health route**
 
-Use the standard library logging module with a stable format containing ISO-8601 timestamp, level, logger name, and message. Read `LOG_LEVEL` from the environment with `INFO` as the default. Do not log secrets or request bodies.
+Make the existing `/health` handler synchronous so it can be tested without a Windows event-loop socket, emit `health_check` at INFO, and return the existing `HealthResponse(status="ok")` model.
 
-- [ ] **Step 3: Add pinned-compatible runtime dependencies**
+- [ ] **Step 3: Add only missing runtime/test dependencies**
 
-Add `fastapi>=0.115,<1` and `uvicorn[standard]>=0.30,<1` to `requirements.txt`. Keep the existing dependency list unchanged otherwise.
+Retain the remote `fastapi` and `uvicorn` requirements; add `httpx>=0.27,<1` for the existing API test client. Narrow the test network guard so only Starlette's in-process loopback transport is allowed; external HTTP, database, and non-loopback sockets remain blocked.
 
 - [ ] **Step 4: Run the focused test and verify GREEN**
 
@@ -94,11 +94,11 @@ Expected: all P5 health/logging tests pass with no live network or database acce
 
 - [ ] **Step 1: Write the production Dockerfile**
 
-Use `python:3.11-slim`, install only `requirements.txt`, copy the application source, set unbuffered output, run as a non-root user, expose port 8000, add a stdlib-based health check, and start Uvicorn. Do not install a database client or database image in the Dockerfile.
+Use the pinned `python:3.11-slim` base, install only `requirements.txt`, copy both `src` and the existing `frontend` static assets, set unbuffered output, run as a non-root user, expose port 8000, add a stdlib-based health check, and start Uvicorn. Do not install a database image.
 
 - [ ] **Step 2: Write the build context exclusions**
 
-Exclude `.git`, `.env`, virtual environments, caches, tests, local data, reports, and generated outputs from the image. Keep `src`, `requirements.txt`, and deployment metadata available to the build.
+Exclude `.git`, `.env`, virtual environments, caches, tests, local data, reports, and generated outputs from the image. Keep `src`, `frontend`, `requirements.txt`, and deployment metadata available to the build.
 
 - [ ] **Step 3: Convert Compose to app-first mode**
 
@@ -119,11 +119,11 @@ Expected: `api` is the only default service; the legacy database is not started 
 **Files:**
 - No source changes expected.
 
-- [ ] **Step 1: Run the complete test suite**
+- [ ] **Step 1: Run P5-scoped tests and record the full-suite baseline**
 
-Run: `python -m pytest -q`
+Run: `python -m pytest tests/test_deployment.py tests/test_api.py -k "health or topics or list_discussions or start_discussion or openapi_schema or cors_headers" -q`
 
-Expected: collection is limited to `tests/`, all tests pass, and no live service is contacted. If the environment lacks a declared dependency, install from the existing `requirements.txt` only; do not provision a database.
+Expected: the P5 health and API smoke subset passes without live services. Run `python -m pytest -q` separately and record unrelated pre-existing failures rather than changing P4 reporting behavior in this P5-only mission.
 
 - [ ] **Step 2: Build the image**
 
@@ -185,6 +185,6 @@ Expected: push succeeds and the remote branch contains the reviewed commit. Do n
 
 ### Task 7: P6 handoff record
 
-- [ ] **Step 1: Report remaining P1–P4 and P6 work**
+- [ ] **Step 1: Report remaining P6 work**
 
-Record that P1 routes, P2 discussion UI, P3 analytics UI, P4 service integration, `DEPLOYMENT.md`, README refresh, `tests/test_api.py`, and the final demo video remain future work. Do not claim those deliverables are complete in this P5-only mission.
+Record that P1–P4 are present on the integrated `origin/main`; `DEPLOYMENT.md`, README refresh, complete API fixture repair, and the final demo video remain P6 work. Do not claim those P6 deliverables are complete in this P5-only mission.

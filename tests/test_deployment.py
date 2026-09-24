@@ -2,15 +2,14 @@ import logging
 
 from fastapi.routing import APIRoute
 
-from src.api.main import app
-from src.api.routes import health_check
+from src.api.routes import health_check, router
 from src.utils.logger import configure_logging
 
 
 def _route(path: str) -> APIRoute:
     matches = [
         route
-        for route in app.routes
+        for route in router.routes
         if isinstance(route, APIRoute) and route.path == path
     ]
     assert len(matches) == 1
