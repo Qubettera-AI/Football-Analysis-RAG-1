@@ -2,7 +2,6 @@
 
 import logging
 import os
-import sys
 import time
 from contextlib import asynccontextmanager
 
@@ -11,19 +10,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
-from src.api.routes import router
-from src.api.services.discussion_service import(
-    start_discussion_worker,
-    shutdown_discussion_worker
-)
 
-# ── Structured Logging ──
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    stream=sys.stdout,
+from src.api.routes import router
+from src.api.services.discussion_service import (
+    start_discussion_worker,
+    shutdown_discussion_worker,
 )
+from src.utils.logger import configure_logging
+
+configure_logging()
 logger = logging.getLogger("src.api")
 
 # ── Configurable CORS ──

@@ -83,8 +83,9 @@ CURATED_TOPICS = [
     tags=["System"],
     summary="Lightweight system health check",
 )
-async def health_check():
+def health_check() -> HealthResponse:
     """Verify that the API server is healthy and running."""
+    logger.info("health_check")
     return HealthResponse(status="ok")
 
 

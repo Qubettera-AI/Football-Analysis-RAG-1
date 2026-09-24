@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: football-analysis-rag-p5
+    runtime: docker
+    plan: free
+    port: 8000
+    healthCheckPath: /health
+    envVars:
+      - key: LOG_LEVEL
+        value: INFO
